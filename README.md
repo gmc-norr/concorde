@@ -119,14 +119,14 @@ scripts/
   reporting/                 # JSON, HTML, PDF report generation
   validation/                # Pre-flight input validation
   validators/                # 31 validators across 8 modules
-models/                      # 19 SQLAlchemy 2.0 ORM models
+models/                      # 16 SQLAlchemy 2.0 ORM models
 config/                      # 4 YAML configuration files
 tests/                       # 705 tests across 8 directories
 ```
 
 ### Database Schema
 
-19 SQLAlchemy ORM models stored in SQLite:
+16 SQLAlchemy ORM models stored in SQLite:
 
 | Model | Purpose |
 |-------|---------|
@@ -141,7 +141,7 @@ tests/                       # 705 tests across 8 directories
 | RootCauseEvidence | Evidence items for variant transitions |
 | BayesianRiskAssessment, StratumPosterior | BRAM aggregate and per-stratum posteriors |
 | AuditEvent | Timestamped audit trail |
-| GeneSet, SoftwareVersion, LLMAnalysis | Ancillary metadata |
+| GeneSet, SoftwareVersion | Ancillary metadata |
 
 ### Statistical Dependencies
 

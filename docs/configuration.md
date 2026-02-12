@@ -287,17 +287,3 @@ bram:
   per_stratum_overrides: {}    # Can override concentration and/or threshold
 ```
 
-## LLM Analysis (optional)
-
-```yaml
-llm_analysis:
-  enabled: false
-  ollama_url: "http://localhost:11434"
-  model: "llama3.2:3b"
-  analysis_types:
-    - "qc_summary"
-    - "anomaly_detection"
-    - "recommendations"
-```
-
-Requires Ollama running locally (`ollama serve`) with the model pulled (`ollama pull llama3.2:3b`).

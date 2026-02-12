@@ -6,7 +6,6 @@
 
 - **pixi** - Package manager (installs all other dependencies)
 - **Apptainer** or **Docker** - Container runtime for hap.py/RTG/som.py
-- **Ollama** (optional) - For LLM-based QC analysis
 
 ### Input Data Requirements
 

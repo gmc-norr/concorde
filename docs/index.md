@@ -18,7 +18,7 @@ Concorde is a computational framework for the systematic validation and continuo
 
 ## Architecture
 
-The pipeline is orchestrated by Snakemake with 11 rules. Analytical logic resides in pure functions (19 analysis modules) testable independently of the workflow engine. Data is persisted in an SQLite database via 19 SQLAlchemy 2.0 ORM models. All statistical computations delegate to scipy and numpy.
+The pipeline is orchestrated by Snakemake with 10 rules. Analytical logic resides in pure functions (19 analysis modules) testable independently of the workflow engine. Data is persisted in an SQLite database via 16 SQLAlchemy 2.0 ORM models. All statistical computations delegate to scipy and numpy.
 
 ```
 scripts/
@@ -30,7 +30,7 @@ scripts/
   reporting/      # JSON, HTML, PDF report generation
   validation/     # Pre-flight input validation
   validators/     # 31 validators across 8 modules
-models/           # 19 SQLAlchemy 2.0 ORM models
+models/           # 16 SQLAlchemy 2.0 ORM models
 config/           # 4 YAML configuration files
 tests/            # 705 tests across 8 directories
 ```
@@ -44,5 +44,5 @@ tests/            # 705 tests across 8 directories
 - [Acceptance Criteria](acceptance.md) - Three-tier acceptance model
 - [Bayesian Risk Assessment](bram.md) - BRAM methodology and integration
 - [Reporting](reporting.md) - Report formats and schema
-- [Database Models](models.md) - Schema reference (19 models)
+- [Database Models](models.md) - Schema reference (16 models)
 - [Development](development.md) - Developer guide, testing, architecture

@@ -1,6 +1,6 @@
 # Pipeline Rules
 
-The Concorde pipeline consists of 11 Snakemake rules that execute in dependency order. Each rule delegates to a Python script containing testable pure functions.
+The Concorde pipeline consists of 10 Snakemake rules that execute in dependency order. Each rule delegates to a Python script containing testable pure functions.
 
 ## Rule 0: validate_inputs
 
@@ -120,21 +120,11 @@ See [Reporting](reporting.md) for details.
 
 **Scripts**: `scripts/ingestion/ingest.py`, `ingest_helpers.py`
 
-Populates 19 ORM models. During ingestion:
+Populates 16 ORM models. During ingestion:
 - Region annotation is applied (GC content, LCR, segdup, mappability) when BED files are configured
 - Zygosity is derived from genotype when not explicitly provided
 - Ti/Tv ratio and Het/Hom ratio are computed and stored as QCMetric records
 - Audit events are recorded
-
----
-
-## Rule 10: llm_analysis (optional)
-
-**Purpose**: Generate AI-powered QC insights using local LLM.
-
-**Script**: `scripts/analysis/llm_qc_analyzer.py`
-
-Only runs when `llm_analysis.enabled: true`. Requires Ollama running locally.
 
 ---
 
@@ -157,7 +147,7 @@ results/
 
 ---
 
-## Rule 11: verify (conditional)
+## Rule 10: verify (conditional)
 
 **Purpose**: Run continuous verification against a locked baseline.
 

@@ -160,7 +160,7 @@ from models.variant import Variant
 | `tests/analysis/` | Stratification, baselines, acceptance, BRAM, extended metrics, cross-validation, diff classifier, root cause, variant diff, region annotator, QC trending, SPC, audit, ensemble |
 | `tests/ingestion/` | VEP merge, ingestion helpers, wiring integration tests |
 | `tests/matching/` | Internal matcher (position+allele, VAF concordance) |
-| `tests/models/` | All 19 ORM models including relationships and cascade deletes |
+| `tests/models/` | All 16 ORM models including relationships and cascade deletes |
 | `tests/parsers/` | som.py VCF/metrics, VEP annotation parsing |
 | `tests/reporting/` | JSON schema, HTML rendering, PDF generation, BRAM reporting |
 | `tests/validators/` | Config validation (germline, somatic, VEP), input files, data quality |

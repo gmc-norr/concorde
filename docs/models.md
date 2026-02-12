@@ -1,6 +1,6 @@
 # Database Models
 
-Concorde uses SQLAlchemy 2.0 ORM with 19 models stored in an SQLite database. All new columns use `nullable=True` for backward compatibility with existing databases.
+Concorde uses SQLAlchemy 2.0 ORM with 16 models stored in an SQLite database. All new columns use `nullable=True` for backward compatibility with existing databases.
 
 ## Model Reference
 
@@ -11,7 +11,6 @@ Concorde uses SQLAlchemy 2.0 ORM with 19 models stored in an SQLite database. Al
 | `Metric` | `metrics` | Aggregate performance metrics with CIs and MCC |
 | `QCMetric` | `qc_metrics` | QC metrics (coverage, Ti/Tv, Het/Hom) |
 | `SoftwareVersion` | `software_versions` | Tool versions used |
-| `LLMAnalysis` | `llm_analyses` | LLM-generated QC insights |
 | `GeneSet` | `gene_sets` | Gene set membership annotations |
 | `StratifiedMetric` | `stratified_metrics` | Per-stratum metrics with CIs, MCC, and genotype concordance |
 | `Baseline` | `baselines` | Validation baselines |
@@ -163,7 +162,6 @@ Run ──< Variant
 Run ──< Metric
 Run ──< QCMetric
 Run ──< SoftwareVersion
-Run ──< LLMAnalysis
 Run ──< GeneSet
 Run ──< StratifiedMetric
 Run ──< Baseline ──< BaselineEnvelope

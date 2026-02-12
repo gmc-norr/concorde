@@ -88,21 +88,6 @@ rule compare_variants:
         mem_mb=16000  # 16GB RAM
 ```
 
-### Ollama Connection Refused
-
-```
-ConnectionRefusedError: Connection refused (localhost:11434)
-```
-
-**Fix:**
-```bash
-# Start Ollama server
-ollama serve
-
-# Or disable LLM analysis
-# In config.yaml: llm_analysis.enabled: false
-```
-
 ## Debug Mode
 
 Run with verbose logging:
