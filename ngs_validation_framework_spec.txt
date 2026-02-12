@@ -1,0 +1,1227 @@
+
+NGS VALIDATION AND CONTINUOUS VERIFICATION FRAMEWORK
+FORMAL REQUIREMENTS AND DESIGN SPECIFICATION
+================================================
+
+PURPOSE
+-------
+This document defines the formal requirements, reference architecture, and regulatory
+mapping for a generic framework to validate and continuously verify NGS bioinformatics
+pipelines for germline and somatic variant calling. It is intended for use as input
+to an agentic development LLM or a software engineering team.
+
+====================================================================
+SECTION 1: SYSTEM OVERVIEW
+====================================================================
+
+The system provides:
+- Initial analytical validation of NGS pipelines
+- Continuous verification after pipeline or environment changes
+- Stratified performance assessment by variant type, impact, gene panel, and context
+- Root-cause analysis of observed differences
+- Full traceability for regulatory compliance (CAP / CLIA / IVDR)
+
+The system is pipeline-agnostic and mode-driven.
+
+====================================================================
+SECTION 2: EXECUTION MODES
+====================================================================
+
+The framework SHALL support the following modes:
+
+- Germline mode
+  - Diploid variant calling
+  - Genotype concordance-based evaluation
+
+- Somatic mode
+  - Tumor–normal or tumor-only calling
+  - VAF-based evaluation
+
+Mode selection SHALL be explicit and configuration-driven.
+Mode SHALL influence truth sets, metrics, stratifications, and acceptance criteria.
+
+2.1 Somatic Mode Requirements
+
+The somatic execution path SHALL support:
+- Tumor-only and tumor–normal paired workflows
+- VAF (variant allele frequency) as a first-class metric on every variant
+- Somatic-specific truth sets (e.g., SEQC2, Horizon HD, in-house spike-ins)
+- Separate confident-region handling (somatic truth sets may not provide
+  high-confidence BED files; the system SHALL allow but not require them)
+
+Somatic configuration SHALL include:
+- tumor_sample: sample identifier for the tumor
+- normal_sample: sample identifier for the matched normal (optional)
+- calling_mode: "tumor_only" | "tumor_normal"
+- min_vaf: minimum VAF threshold for truth variants (default 0.0)
+- vaf_tolerance: absolute VAF difference for concordance (default 0.10)
+- expected_contamination: upper-bound contamination estimate (optional)
+
+Somatic variant records SHALL additionally store:
+- tumor_dp: tumor depth at variant site
+- tumor_af: tumor VAF
+- normal_dp: normal depth at variant site (if paired)
+- normal_af: normal VAF (if paired; expected ~0 for true somatic calls)
+- somatic_quality: caller-reported somatic quality score (e.g., TLOD, SomaticEVS)
+
+Somatic normalization SHALL:
+- Preserve multi-allelic records (no splitting) unless explicitly configured
+- Retain original FILTER annotations from the caller
+- Record whether the variant passed the caller's own somatic filter
+
+The comparison tool selection for somatic mode SHALL be:
+- som.py (hap.py somatic module) as the default
+- RTG vcfeval with --squash-ploidy for somatic evaluation as an alternative
+- Custom position + allele matching as a fallback when no external tool is suitable
+
+2.2 Mode-Specific Configuration Schema
+
+The configuration file SHALL contain a top-level "mode" key:
+  mode: "germline" | "somatic"
+
+All downstream rules, parsers, metrics, stratifications, and acceptance criteria
+SHALL branch on this value. Adding a new mode in the future (e.g., "mitochondrial",
+"copy_number") SHALL require only:
+- A new mode value
+- Mode-specific configuration block
+- Mode-specific metric and acceptance definitions
+
+====================================================================
+SECTION 3: INPUT DATA
+====================================================================
+
+3.1 Test Fixtures
+
+The system SHALL consume immutable, versioned test fixtures containing:
+- FASTQ files
+- Reference genome
+- Truth variant sets
+- Confident regions (where applicable)
+- Metadata (genome build, context, source)
+
+Fixtures SHALL be integrity-checked prior to execution.
+
+3.2 Pipeline Outputs
+
+The system SHALL accept outputs from arbitrary NGS pipelines including:
+- VCF / gVCF
+- BAM / CRAM
+- QC metrics
+- Logs (optional)
+
+====================================================================
+SECTION 4: PIPELINE ADAPTER LAYER
+====================================================================
+
+Pipeline-specific outputs SHALL be mapped using declarative adapter configurations.
+
+Adapters SHALL:
+- Identify relevant output files
+- Map them to canonical artifact types
+- Be version-scoped
+- Fail explicitly if required outputs are missing
+
+Adapters SHALL NOT implement analysis logic.
+
+====================================================================
+SECTION 5: CANONICALIZATION
+====================================================================
+
+All pipeline outputs SHALL be normalized into canonical forms prior to analysis.
+
+Canonicalization SHALL:
+- Normalize variant representation
+- Remove ordering and formatting differences
+- Standardize BAM and metric formats
+
+Canonical outputs SHALL be independent of pipeline layout.
+
+====================================================================
+SECTION 6: VARIANT FACT TABLE
+====================================================================
+
+The system SHALL construct a Variant Fact Table as the single source of truth.
+
+Each variant SHALL include:
+- Genomic coordinates (chrom, pos, ref, alt)
+- Variant type (SNV, INS, DEL, SV)
+- Indel size or SV type
+- Quality and depth metrics
+- Functional annotation (VEP)
+- Gene symbol(s)
+- Panel membership
+- Calling context (germline / somatic)
+- Tumor and normal metrics (if applicable)
+- VAF (somatic)
+
+====================================================================
+SECTION 7: ANNOTATION
+====================================================================
+
+Variants SHALL be annotated using a fixed, versioned annotation toolchain.
+
+The system SHALL record:
+- Annotation tool version
+- Cache version
+- Transcript selection policy
+
+Annotation rules SHALL be immutable per validation baseline.
+
+7.1 VEP Integration
+
+The system SHALL integrate Ensembl VEP (Variant Effect Predictor) as the
+primary annotation engine. VEP SHALL be executed as a Snakemake rule against
+the canonicalized VCF prior to variant ingestion.
+
+VEP configuration SHALL specify:
+- vep_version: pinned VEP release (e.g., "110")
+- cache_version: pinned cache release matching the genome build
+- genome_build: "GRCh37" | "GRCh38"
+- transcript_source: "ensembl" | "refseq" | "merged"
+- transcript_selection: "canonical" | "mane_select" | "most_severe"
+- additional_plugins: list of VEP plugins to enable (e.g., CADD, SpliceAI)
+
+VEP output fields that SHALL be captured per variant:
+- consequence: most severe consequence term (e.g., missense_variant)
+- impact: VEP impact tier (HIGH, MODERATE, LOW, MODIFIER)
+- gene_symbol: HGNC gene symbol
+- gene_id: Ensembl gene ID
+- transcript_id: selected transcript ID
+- hgvsc: HGVS coding notation
+- hgvsp: HGVS protein notation
+- exon: exon number (if applicable)
+- protein_position: amino acid position
+- sift_prediction: SIFT call and score (if available)
+- polyphen_prediction: PolyPhen call and score (if available)
+
+The Variant Fact Table (Section 6) SHALL be extended with these annotation
+columns. Annotation SHALL run identically on both truth and query variants
+to ensure fair stratification.
+
+7.2 Annotation Versioning and Reproducibility
+
+Each validation run SHALL record the complete annotation configuration as
+immutable metadata:
+- VEP binary version + container hash
+- Cache directory checksum or version tag
+- Plugin versions
+- Transcript selection policy
+
+Changing any annotation parameter SHALL require a new validation baseline
+(Section 12).
+
+====================================================================
+SECTION 8: GENE PANELS
+====================================================================
+
+Gene panels SHALL be treated as regulated reference data.
+
+Panels SHALL:
+- Be versioned
+- Include gene lists or BED definitions
+- Be independently traceable
+
+Variants SHALL be annotated with zero, one, or multiple panel memberships.
+
+====================================================================
+SECTION 9: STRATIFICATION
+====================================================================
+
+The system SHALL support stratification by:
+- Variant class
+- Indel size bins
+- Structural variant type
+- Functional impact
+- Gene panel
+- Zygosity (germline)
+- VAF bins (somatic)
+
+Stratifications SHALL be declarative, extensible, and mode-aware.
+
+9.1 Stratification Definitions
+
+Each stratification SHALL be defined as a named rule that assigns variants to
+one or more strata. Stratification definitions SHALL be stored in a versioned
+configuration file (e.g., stratifications.yaml).
+
+Standard stratification dimensions:
+
+  variant_class:
+    - SNV
+    - INDEL
+    - SV (if applicable)
+
+  indel_size:
+    - 1bp
+    - 2-5bp
+    - 6-15bp
+    - 16-50bp
+    - >50bp
+
+  functional_impact:
+    - HIGH        (stop_gained, frameshift, splice_donor/acceptor)
+    - MODERATE     (missense, inframe_indel)
+    - LOW          (synonymous, splice_region)
+    - MODIFIER     (intronic, intergenic, UTR)
+
+  gene_panel:
+    - One stratum per configured panel (e.g., ACMG59, ClinGen, custom)
+    - "off_panel" for variants not in any panel
+
+  zygosity (germline only):
+    - HET
+    - HOM_ALT
+    - HOM_REF (for genotype concordance on non-variant sites)
+
+  vaf_bins (somatic only):
+    - <0.05
+    - 0.05-0.10
+    - 0.10-0.20
+    - 0.20-0.50
+    - >0.50
+
+  genomic_context (optional, BED-based):
+    - low_complexity
+    - segmental_duplications
+    - homopolymer_runs
+    - gc_extremes
+
+9.2 Stratification Engine
+
+The stratification engine SHALL:
+- Accept a list of stratification dimensions from configuration
+- Assign every variant to its applicable strata (a variant may belong to
+  multiple strata across dimensions)
+- Compute metrics (Section 11) independently for each stratum
+- Support cross-stratification (e.g., "SNV in ACMG59 genes with HIGH impact")
+- Flag strata with fewer than N variants (configurable; default N=20) as
+  low-confidence
+
+9.3 Custom Stratifications
+
+Users SHALL be able to define custom stratifications by providing:
+- A BED file (region-based stratification), or
+- A filter expression on variant attributes (e.g., "dp >= 30 AND mq >= 40")
+
+Custom stratifications SHALL follow the same versioning and traceability rules
+as built-in stratifications.
+
+====================================================================
+SECTION 10: TRUTH MATCHING
+====================================================================
+
+Germline:
+- Exact allele matching
+- Genotype concordance
+- Confident region enforcement
+
+Somatic:
+- Position and allele matching
+- VAF tolerance
+- Partial matches tracked separately
+
+Matching rules SHALL be configurable and versioned.
+
+10.1 Germline Matching Rules
+
+Germline truth matching SHALL be delegated to hap.py or RTG vcfeval, which
+perform haplotype-aware comparison. The system SHALL configure:
+- comparison_tool: "happy" | "rtg"
+- confident_regions: path to high-confidence BED (required for germline)
+- genotype_match: whether genotype must match exactly or allele-only (default: exact)
+- partial_credit: whether het/hom mismatches count as partial TP (default: false)
+
+Classification categories for germline:
+- TP: true positive (correct allele and genotype in confident region)
+- FP: false positive (called variant not in truth set within confident region)
+- FN: false negative (truth variant not called within confident region)
+- TP_GT_MISMATCH: correct allele, wrong genotype (if partial_credit enabled)
+
+10.2 Somatic Matching Rules
+
+Somatic truth matching SHALL support both tool-based and internal matching:
+
+Tool-based matching:
+- som.py: hap.py somatic module (default)
+- RTG vcfeval with --squash-ploidy
+
+Internal matching (fallback):
+- Position window: exact position match (default) or configurable window (bp)
+- Allele matching: exact REF+ALT match required
+- VAF concordance: |truth_vaf - query_vaf| <= vaf_tolerance
+- Multi-allelic handling: each ALT allele matched independently
+
+Classification categories for somatic:
+- TP: true positive (position + allele match, VAF within tolerance)
+- FP: false positive (called variant not in truth set)
+- FN: false negative (truth variant not called)
+- TP_VAF_DISCORDANT: position + allele match, VAF outside tolerance
+- PARTIAL: position match but allele mismatch (tracked for investigation)
+
+10.3 Matching Configuration Schema
+
+Truth matching configuration SHALL be specified per mode:
+
+  truth_matching:
+    germline:
+      tool: "happy" | "rtg"
+      confident_regions: <path>
+      genotype_match: true | false
+      partial_credit: true | false
+    somatic:
+      tool: "sompy" | "rtg" | "internal"
+      vaf_tolerance: 0.10
+      position_window: 0
+      require_allele_match: true
+      track_partial_matches: true
+
+====================================================================
+SECTION 11: METRICS
+====================================================================
+
+The system SHALL compute metrics globally and per stratum.
+
+Germline metrics:
+- Sensitivity
+- Precision
+- Genotype concordance
+
+Somatic metrics:
+- Recall vs VAF
+- Precision
+- False positives per Mb
+
+Low-count strata SHALL be flagged.
+
+====================================================================
+SECTION 12: INITIAL VALIDATION
+====================================================================
+
+Initial validation SHALL:
+- Use frozen fixtures
+- Establish baseline performance envelopes
+- Produce a signed validation report
+
+12.1 Baseline Establishment
+
+An initial validation run SHALL produce a baseline record containing:
+- The complete configuration snapshot (config.yaml + stratifications.yaml)
+- All input file checksums (truth VCF, reference, BED, gene panels)
+- Pipeline version, container hashes, and tool versions
+- Annotation configuration and cache version
+- Computed metrics for every stratum (Section 9)
+- The full variant fact table
+
+The baseline SHALL be stored as an immutable, versioned artifact. The system
+SHALL support multiple named baselines (e.g., "v1.0_germline_GRCh38",
+"v2.1_somatic_validation").
+
+12.2 Performance Envelopes
+
+For each metric in each stratum, the baseline SHALL define:
+- expected_value: the observed metric value
+- lower_bound: minimum acceptable value (absolute or relative)
+- upper_bound: maximum acceptable value (if applicable)
+
+Envelope definitions SHALL be mode-specific and may be:
+- Auto-derived: computed as expected_value +/- tolerance (configurable)
+- Manually set: overridden by the validator for specific strata
+
+Example:
+  baselines:
+    v1.0_germline:
+      SNV:
+        sensitivity: {expected: 0.9975, lower_bound: 0.9950}
+        precision:   {expected: 0.9990, lower_bound: 0.9980}
+      INDEL:
+        sensitivity: {expected: 0.9900, lower_bound: 0.9800}
+        precision:   {expected: 0.9950, lower_bound: 0.9900}
+
+12.3 Baseline Signing and Locking
+
+Once approved, a baseline SHALL be signed with:
+- Approver identity
+- Approval date
+- Approval comments / justification
+- SHA-256 hash of the complete baseline artifact
+
+A locked baseline SHALL NOT be modified. To change acceptance thresholds, a
+new baseline version SHALL be created with a documented rationale.
+
+12.4 Fixture Management
+
+Test fixtures used for initial validation SHALL be:
+- Checksummed (MD5 or SHA-256) at registration time
+- Verified before each run (integrity check)
+- Stored in a versioned fixture registry with metadata:
+  - source (e.g., GIAB, Horizon, in-house)
+  - genome build
+  - sample identifier
+  - truth set version
+  - date registered
+
+====================================================================
+SECTION 13: CONTINUOUS VERIFICATION
+====================================================================
+
+The system SHALL:
+- Compare pipeline versions
+- Detect output differences
+- Classify differences as:
+  * Equivalent
+  * Numerical drift
+  * Biological differences
+
+13.1 Verification Trigger
+
+A continuous verification run SHALL be triggered when any of the following
+change relative to the locked baseline:
+- Pipeline software version
+- Pipeline container image
+- Reference genome or annotation cache
+- Operating environment (OS, library versions)
+- Pipeline parameters or configuration
+
+The trigger SHALL be explicit (user-initiated or CI/CD-driven), not automatic.
+
+13.2 Difference Detection
+
+The system SHALL compare the verification run against the baseline by:
+- Re-running the full validation workflow on the same frozen fixtures
+- Computing all metrics per stratum (identical stratification definitions)
+- Producing a variant-level diff: variants gained, lost, or changed
+
+The diff SHALL capture for each affected variant:
+- variant_key: chrom:pos:ref:alt
+- baseline_classification: TP / FP / FN in the baseline
+- verification_classification: TP / FP / FN in the new run
+- transition: e.g., "FN→TP" (gained), "TP→FN" (lost), "TP→FP" (changed)
+- strata: all strata the variant belongs to
+
+13.3 Difference Classification
+
+Each metric difference SHALL be classified as:
+
+  Equivalent:
+  - Metric values identical (within floating-point tolerance of 1e-9)
+  - No variant-level differences in that stratum
+
+  Numerical drift:
+  - Metric change is within the baseline performance envelope
+  - Variant-level differences exist but are limited to:
+    * Variants near quality thresholds (QUAL within 10% of filter cutoff)
+    * Borderline genotype calls (GQ < 20)
+    * Known noisy regions (low-complexity, segmental duplications)
+
+  Biological difference:
+  - Metric change exceeds the baseline performance envelope, OR
+  - Variant-level changes affect HIGH or MODERATE impact variants, OR
+  - Changes affect variants in regulated gene panels
+
+13.4 Verification Database
+
+Each verification run SHALL be stored as a Run record linked to its baseline.
+The system SHALL maintain a history of all verification runs to support:
+- Trend analysis (metric drift over time)
+- Regression detection (sudden changes after specific updates)
+- Audit trail for regulatory review
+
+13.5 Automated Comparison Report
+
+The verification run SHALL produce a comparison report containing:
+- Summary: PASS / FAIL / REVIEW_REQUIRED
+- Per-stratum metric comparison table (baseline vs. verification)
+- List of variant-level transitions grouped by classification
+- Flagged strata where performance envelope was breached
+
+====================================================================
+SECTION 14: ROOT CAUSE ANALYSIS
+====================================================================
+
+For biological differences, the system SHALL collect evidence including:
+- Coverage changes
+- Mapping quality shifts
+- Filter changes
+- Tool version changes
+
+Root cause evidence SHALL be linked to affected variants and strata.
+
+14.1 Evidence Collection
+
+When a variant-level transition is classified as a biological difference
+(Section 13.3), the system SHALL collect the following evidence from BAM/CRAM
+files at the variant locus (if BAM/CRAM is provided):
+
+  Coverage evidence:
+  - baseline_dp: depth at variant position in baseline BAM
+  - verification_dp: depth at variant position in verification BAM
+  - dp_change: absolute and relative difference
+  - coverage_context: depth in 100bp window around variant
+
+  Mapping quality evidence:
+  - baseline_mq: mean mapping quality at variant position
+  - verification_mq: mean mapping quality at variant position
+  - mq_change: absolute difference
+  - discordant_read_pairs: count of improperly paired reads
+
+  Filter evidence:
+  - baseline_filter: FILTER field value in baseline VCF
+  - verification_filter: FILTER field value in verification VCF
+  - filter_transition: e.g., "PASS→LowQual", "LowDP→PASS"
+
+  Quality score evidence:
+  - baseline_qual: QUAL score in baseline
+  - verification_qual: QUAL score in verification
+  - qual_change: absolute and relative difference
+
+  Tool version evidence:
+  - changed_tools: list of tools with version changes between runs
+  - tool_changelogs: links to release notes (if available in metadata)
+
+14.2 Evidence Scoring
+
+Each piece of evidence SHALL be scored for explanatory power:
+- STRONG: evidence directly explains the variant transition
+  (e.g., depth dropped from 30x to 5x for a lost TP)
+- MODERATE: evidence is consistent with the transition but not definitive
+  (e.g., mapping quality decreased by 5 points)
+- WEAK: evidence exists but does not clearly explain the change
+  (e.g., tool version changed but changelog has no relevant entries)
+- NONE: no evidence found for this category
+
+14.3 Root Cause Report
+
+The root cause analysis SHALL produce a per-variant evidence record:
+- variant_key: chrom:pos:ref:alt
+- transition: e.g., "TP→FN"
+- affected_strata: list of strata this variant belongs to
+- evidence: list of evidence items with category, values, and score
+- likely_cause: automated best-guess (e.g., "coverage_drop", "filter_change",
+  "mapping_quality_shift", "tool_update", "unknown")
+- requires_review: boolean (true if no STRONG evidence found)
+
+Evidence records SHALL be stored in the database and included in the
+verification report (Section 16).
+
+14.4 BAM-Optional Operation
+
+If BAM/CRAM files are not provided, the system SHALL:
+- Skip coverage and mapping quality evidence collection
+- Still collect filter, quality score, and tool version evidence
+- Flag the root cause analysis as "limited" in the report
+
+====================================================================
+SECTION 15: ACCEPTANCE CRITERIA
+====================================================================
+
+Acceptance criteria SHALL be:
+- Mode-specific
+- Stratification-aware
+- Risk-based
+
+Violations SHALL trigger escalation or revalidation.
+
+15.1 Acceptance Criteria Definitions
+
+Acceptance criteria SHALL be defined in a versioned configuration file
+(e.g., acceptance_criteria.yaml) with the following structure:
+
+  acceptance_criteria:
+    mode: "germline" | "somatic"
+    global:
+      min_sensitivity: 0.99
+      min_precision: 0.999
+    per_stratum:
+      SNV:
+        min_sensitivity: 0.995
+        min_precision: 0.999
+      INDEL:
+        min_sensitivity: 0.98
+        min_precision: 0.995
+      HIGH_impact:
+        min_sensitivity: 0.999
+        min_precision: 0.999
+    per_panel:
+      ACMG59:
+        min_sensitivity: 0.999
+        min_precision: 0.9999
+    low_count_threshold: 20
+    low_count_policy: "warn" | "exclude" | "fail"
+
+15.2 Risk-Based Tiering
+
+Acceptance criteria SHALL support risk-based tiering where different strata
+have different thresholds based on clinical significance:
+
+  Tier 1 (Critical):
+  - Variants in regulated gene panels (e.g., ACMG59)
+  - HIGH impact variants (stop_gained, frameshift)
+  - Strictest thresholds; any failure triggers revalidation
+
+  Tier 2 (Standard):
+  - All coding variants (MODERATE + LOW impact)
+  - Standard thresholds; failures trigger review
+
+  Tier 3 (Informational):
+  - Non-coding variants (MODIFIER impact)
+  - Off-panel variants
+  - Relaxed thresholds; failures are logged but may not block
+
+Risk tiers SHALL be configurable. The default tier assignment SHALL be based
+on functional impact and panel membership.
+
+15.3 Acceptance Decision Logic
+
+The system SHALL evaluate acceptance as follows:
+
+  1. Compute metrics for every stratum
+  2. Compare each metric against its acceptance threshold
+  3. Apply low-count policy to strata below the variant count threshold
+  4. Determine per-stratum result: PASS | FAIL | WARN | EXCLUDED
+  5. Determine overall result:
+     - PASS: all Tier 1 and Tier 2 strata pass
+     - CONDITIONAL_PASS: all Tier 1 strata pass; Tier 2 has warnings only
+     - FAIL: any Tier 1 stratum fails
+     - REVIEW_REQUIRED: Tier 2 failures or unresolved warnings
+
+15.4 Escalation Actions
+
+When acceptance criteria are violated:
+
+  FAIL:
+  - Block pipeline release
+  - Generate detailed failure report
+  - Trigger root cause analysis (Section 14)
+  - Require documented remediation before re-evaluation
+
+  REVIEW_REQUIRED:
+  - Generate review report with affected strata and variants
+  - Require human sign-off to proceed
+  - Record reviewer, date, and justification
+
+  CONDITIONAL_PASS:
+  - Generate report with noted warnings
+  - Allow release with documented limitations
+  - Schedule follow-up investigation
+
+====================================================================
+SECTION 16: REPORTING
+====================================================================
+
+The system SHALL generate:
+- Machine-readable outputs (JSON)
+- Human-readable reports (HTML/PDF)
+
+Reports SHALL include:
+- Mode
+- Inputs and versions
+- Metrics
+- Differences vs baseline
+- Acceptance decision
+
+16.1 Machine-Readable Output (JSON)
+
+The system SHALL produce a structured JSON report containing:
+
+  {
+    "report_type": "initial_validation" | "continuous_verification",
+    "report_version": "1.0",
+    "generated_at": "<ISO 8601 timestamp>",
+    "mode": "germline" | "somatic",
+    "run_metadata": {
+      "sample": "...",
+      "pipeline_version": "...",
+      "caller": "...",
+      "comparison_tool": "...",
+      "container_hash": "...",
+      "baseline_id": "..." (for verification reports)
+    },
+    "input_checksums": { ... },
+    "annotation_config": { ... },
+    "metrics": {
+      "global": { "sensitivity": ..., "precision": ..., "f1": ... },
+      "per_stratum": { ... }
+    },
+    "acceptance": {
+      "overall_result": "PASS" | "FAIL" | "CONDITIONAL_PASS" | "REVIEW_REQUIRED",
+      "per_stratum_results": [ ... ],
+      "violations": [ ... ]
+    },
+    "variant_diff": [ ... ] (for verification reports),
+    "root_cause_evidence": [ ... ] (for verification reports)
+  }
+
+The JSON schema SHALL be versioned. Changes to the schema SHALL be
+backward-compatible (additive only) within a major version.
+
+16.2 Human-Readable Report (HTML)
+
+The system SHALL generate an HTML report using a templating engine (e.g.,
+Jinja2). The report SHALL include the following sections:
+
+  1. Header:
+     - Report title, date, mode, overall acceptance decision
+     - Pipeline and sample metadata
+     - Color-coded status banner (green=PASS, red=FAIL, amber=REVIEW)
+
+  2. Executive Summary:
+     - Global metrics table (sensitivity, precision, F1)
+     - Key findings (pass/fail count per tier)
+     - Comparison to baseline (if verification run)
+
+  3. Per-Stratum Metrics:
+     - Table with columns: stratum, variant_count, sensitivity, precision,
+       F1, threshold, result, delta_vs_baseline
+     - Rows sorted by risk tier, then by result (failures first)
+     - Low-count strata visually flagged
+
+  4. Variant Details (expandable):
+     - Variant-level diff table (gained, lost, changed)
+     - Filterable by stratum, transition type, impact
+     - Limited to top N variants by default (configurable)
+
+  5. Root Cause Analysis (if applicable):
+     - Per-variant evidence summary
+     - Evidence strength indicators
+     - Aggregated likely causes
+
+  6. Traceability:
+     - Complete input file list with checksums
+     - Tool versions
+     - Configuration snapshot
+     - Approval signatures (if baseline report)
+
+  7. Appendices:
+     - Full metric tables (all strata)
+     - Configuration YAML dump
+     - Glossary of terms
+
+16.3 PDF Generation
+
+The system SHALL optionally generate PDF output from the HTML report using
+a headless rendering engine (e.g., weasyprint). PDF reports SHALL be
+suitable for regulatory submission and archival.
+
+16.4 Report Storage
+
+Reports SHALL be:
+- Stored alongside the run output directory
+- Named with a convention: {sample}_{mode}_{date}_{report_type}.{ext}
+- Linked to the Run record in the database
+- Checksummed for integrity verification
+
+====================================================================
+SECTION 17: BAYESIAN RISK ASSESSMENT MODULE (BRAM)
+====================================================================
+
+The system SHALL provide an optional probabilistic risk assessment layer
+that augments the deterministic acceptance criteria (Section 15) with
+Bayesian estimation of the probability that pipeline changes adversely
+affect clinically relevant variants.
+
+BRAM addresses a fundamental limitation of threshold-based acceptance:
+point estimates of sensitivity and precision are unreliable in low-count
+strata (e.g., 5 HIGH-impact variants). Posterior distributions provide
+calibrated uncertainty, enabling risk-proportionate decision-making.
+
+17.1 Purpose and Scope
+
+BRAM operates on:
+- Delta metrics between a verification run and its locked baseline (S13)
+- Stratification dimensions from S9 (panel, variant class, impact, VAF bin)
+- Historical performance data from prior verification runs (S13.4)
+- Expert-defined risk weights aligned with acceptance tiers (S15.2)
+
+BRAM outputs:
+- Per-stratum posterior probability that the true metric degradation
+  exceeds a clinically meaningful threshold
+- Aggregate risk scores per mode, per panel, and globally
+- Flagged strata where posterior risk exceeds configured alert thresholds
+- Full traceability of inputs, priors, and model parameters
+
+17.2 Statistical Model
+
+17.2.1 Metric Representation
+
+For each metric m in {sensitivity, precision} and each stratum s, define:
+
+  delta_m_s = metric_verification - metric_baseline
+
+A negative delta indicates performance degradation.
+
+17.2.2 Prior Distribution
+
+The prior on the true delta SHALL be a Normal distribution:
+
+  delta_true ~ Normal(mu_prior, sigma_prior^2)
+
+Default prior: mu_prior = 0 (no expected change), sigma_prior from
+historical verification data or a configured default (e.g., 0.005).
+
+Prior sources (in order of preference):
+1. Empirical: computed from historical verification runs for the same
+   stratum across previous baselines (mean and variance of observed deltas)
+2. Configured: user-specified mu and sigma per stratum or globally
+3. Default: Normal(0, 0.005^2) — assumes changes are typically < 1%
+
+For strata with sufficient historical data (>= 5 prior verification
+runs), the system SHALL use the empirical prior. Otherwise, it SHALL
+fall back to configured or default priors.
+
+17.2.3 Likelihood Function
+
+The observed delta is modeled as:
+
+  delta_observed | delta_true ~ Normal(delta_true, sigma_obs^2)
+
+where sigma_obs is the observation noise, estimated from:
+- The standard error of the metric estimate in the current stratum:
+  For sensitivity = TP/(TP+FN): SE = sqrt(sens * (1-sens) / (TP+FN))
+  For precision = TP/(TP+FP): SE = sqrt(prec * (1-prec) / (TP+FP))
+- A minimum floor of 1e-6 to avoid degenerate distributions
+
+17.2.4 Posterior Distribution (Conjugate Update)
+
+Because the Normal-Normal model is conjugate, the posterior is
+available in closed form:
+
+  sigma_post^2 = 1 / (1/sigma_prior^2 + 1/sigma_obs^2)
+  mu_post = sigma_post^2 * (mu_prior/sigma_prior^2 + delta_observed/sigma_obs^2)
+
+  delta_true | delta_observed ~ Normal(mu_post, sigma_post^2)
+
+No MCMC or numerical integration is required.
+
+17.2.5 Risk Quantity
+
+The primary risk quantity is the posterior tail probability:
+
+  P(delta_true < -threshold | data)
+
+where threshold is the clinically meaningful degradation limit
+(configurable per metric and stratum, default 0.01 = 1%).
+
+This is computed as:
+
+  risk = Phi((-threshold - mu_post) / sigma_post)
+
+where Phi is the standard Normal CDF (scipy.stats.norm.cdf).
+
+17.2.6 Risk Weights
+
+Risk weights are multiplicative scaling factors on the risk quantity
+that reflect clinical significance. They map directly to acceptance
+tiers (S15.2):
+
+  Tier 1 (Critical): weight = 2.0 (panels like ACMG59, HIGH impact)
+  Tier 2 (Standard): weight = 1.0 (MODERATE/LOW impact coding variants)
+  Tier 3 (Informational): weight = 0.5 (MODIFIER, off-panel)
+
+The weighted risk for stratum s is:
+
+  weighted_risk_s = min(1.0, risk_s * weight_s)
+
+Risk weights SHALL be configurable per stratum in the BRAM configuration.
+
+17.3 Aggregation
+
+17.3.1 Per-Panel Aggregation
+
+For a gene panel P, the aggregate risk SHALL be computed as:
+
+  panel_risk_P = max(weighted_risk_s) for all strata s in panel P
+
+The max aggregation is conservative: the panel risk is driven by its
+worst-performing stratum. This is appropriate for clinical decision-making
+where a single failing dimension is actionable.
+
+17.3.2 Global Aggregation
+
+The global aggregate risk SHALL be:
+
+  global_risk = max(panel_risk_P) for all panels P
+
+The system SHALL also report:
+- mean_risk: average weighted risk across all strata (for trend monitoring)
+- flagged_count: number of strata exceeding the alert threshold
+
+17.3.3 Alternative Aggregation Methods
+
+The aggregation method SHALL be configurable. Supported methods:
+- "max" (default): conservative, suitable for regulatory submission
+- "weighted_mean": risk-weight-adjusted mean across strata
+- "product": joint probability of all strata passing (1 - risk)
+
+17.4 Configuration
+
+BRAM configuration SHALL be specified in a dedicated section of the
+pipeline configuration:
+
+  bram:
+    enabled: true
+    alert_threshold: 0.80        # Flag strata with P(degradation) > 80%
+    degradation_threshold: 0.01  # 1% degradation is clinically meaningful
+    aggregation_method: "max"    # max | weighted_mean | product
+    default_prior:
+      mu: 0.0
+      sigma: 0.005
+    use_historical_priors: true  # Use empirical priors when available
+    min_historical_runs: 5       # Minimum verification runs for empirical prior
+    risk_weights:
+      tier_1: 2.0
+      tier_2: 1.0
+      tier_3: 0.5
+    per_stratum_overrides:       # Optional per-stratum prior overrides
+      # ACMG59:
+      #   prior_mu: 0.0
+      #   prior_sigma: 0.002
+      #   degradation_threshold: 0.005
+
+17.5 Integration with Acceptance Criteria (Section 15)
+
+BRAM SHALL augment, not replace, the deterministic acceptance engine.
+
+The integration follows a two-stage decision process:
+
+  Stage 1 (Deterministic): AcceptanceEngine evaluates per-stratum metrics
+  against fixed thresholds (S15.3). This produces PASS / FAIL / WARN /
+  EXCLUDED per stratum and an overall verdict.
+
+  Stage 2 (Probabilistic): BRAM computes posterior risk for all strata
+  that are not EXCLUDED. The BRAM verdict is:
+  - BRAM_PASS: no strata exceed the alert threshold
+  - BRAM_FLAG: one or more strata exceed the alert threshold
+  - BRAM_NOT_RUN: BRAM is disabled or insufficient data
+
+The combined verdict logic:
+
+  | Deterministic | BRAM       | Final Verdict      |
+  |---------------|------------|--------------------|
+  | PASS          | BRAM_PASS  | PASS               |
+  | PASS          | BRAM_FLAG  | REVIEW_REQUIRED    |
+  | COND_PASS     | BRAM_PASS  | CONDITIONAL_PASS   |
+  | COND_PASS     | BRAM_FLAG  | REVIEW_REQUIRED    |
+  | REVIEW_REQ    | any        | REVIEW_REQUIRED    |
+  | FAIL          | any        | FAIL               |
+
+Key principle: BRAM can escalate a PASS to REVIEW_REQUIRED (when
+probabilistic analysis reveals hidden risk in low-count strata), but
+it cannot downgrade a FAIL to PASS. Deterministic failures always stand.
+
+17.6 Integration with Existing Pipeline Modules
+
+  | BRAM Concept              | Concorde Module                          |
+  |---------------------------|------------------------------------------|
+  | Delta metrics             | variant_diff.py, BaselineManager         |
+  |                           | .check_envelopes()                       |
+  | Prior distributions       | BaselineEnvelope (expected_value,        |
+  |                           | bounds) + historical VerificationResult  |
+  | Risk weights              | AcceptanceEngine.assign_tier()           |
+  | Posterior → decision      | Augments AcceptanceEngine.evaluate_all() |
+  | Historical data           | VerificationResult + StratifiedMetric    |
+  |                           | records across runs                      |
+  | Report output             | json_report.py "bayesian_risk" block     |
+
+17.7 Data Model
+
+17.7.1 BayesianRiskAssessment Table
+
+  bayesian_risk_assessments:
+    id: Integer, primary key
+    run_id: ForeignKey(runs.id)
+    baseline_id: ForeignKey(baselines.id)
+    aggregate_risk_score: Float         # Global max weighted risk
+    mean_risk_score: Float              # Mean weighted risk across strata
+    flagged_stratum_count: Integer      # Strata exceeding alert threshold
+    alert_threshold: Float              # Configured threshold used
+    degradation_threshold: Float        # Configured degradation limit
+    aggregation_method: String(20)      # max | weighted_mean | product
+    verdict: String(20)                 # BRAM_PASS | BRAM_FLAG | BRAM_NOT_RUN
+    created_at: DateTime
+
+17.7.2 StratumPosterior Table
+
+  stratum_posteriors:
+    id: Integer, primary key
+    assessment_id: ForeignKey(bayesian_risk_assessments.id)
+    dimension: String(50)               # e.g., "variant_class"
+    stratum: String(100)                # e.g., "SNP"
+    metric_name: String(50)             # "sensitivity" or "precision"
+    delta_observed: Float               # Observed metric change
+    prior_mu: Float                     # Prior mean
+    prior_sigma: Float                  # Prior std dev
+    sigma_obs: Float                    # Observation noise (SE)
+    posterior_mu: Float                 # Posterior mean
+    posterior_sigma: Float              # Posterior std dev
+    tail_probability: Float             # P(delta_true < -threshold)
+    risk_weight: Float                  # Tier-based weight
+    weighted_risk: Float                # min(1.0, tail_prob * weight)
+    flagged: Boolean                    # weighted_risk > alert_threshold
+    tier: String(10)                    # tier_1 | tier_2 | tier_3
+
+17.8 Report Integration (Section 16)
+
+The JSON report (S16.1) SHALL include a "bayesian_risk" block when BRAM
+is enabled:
+
+  "bayesian_risk": {
+    "enabled": true,
+    "verdict": "BRAM_PASS" | "BRAM_FLAG",
+    "aggregate_risk_score": 0.23,
+    "mean_risk_score": 0.08,
+    "flagged_count": 0,
+    "alert_threshold": 0.80,
+    "degradation_threshold": 0.01,
+    "per_stratum": [
+      {
+        "dimension": "gene_panel",
+        "stratum": "ACMG59",
+        "metric": "sensitivity",
+        "delta_observed": -0.002,
+        "posterior_mu": -0.001,
+        "posterior_sigma": 0.003,
+        "tail_probability": 0.37,
+        "risk_weight": 2.0,
+        "weighted_risk": 0.74,
+        "flagged": false,
+        "tier": "tier_1"
+      }
+    ]
+  }
+
+The HTML report (S16.2) SHALL include a "Bayesian Risk Assessment"
+section between "Acceptance Results" and "Variant Differences" when
+BRAM is enabled. This section SHALL include:
+- A risk heatmap showing weighted risk per stratum
+- Flagged strata highlighted in red
+- Prior vs posterior comparison for flagged strata
+- The combined verdict table showing deterministic + BRAM outcomes
+
+17.9 Traceability
+
+For each BRAM assessment, the system SHALL record:
+- All input delta metrics and their provenance (run IDs, baseline ID)
+- Prior source for each stratum (empirical / configured / default)
+- If empirical: the historical run IDs and delta values used
+- All hyperparameters and configuration values
+- Posterior computation results
+- Aggregation method and result
+- Timestamp and BRAM module version
+
+This traceability record SHALL be:
+- Stored in the database (Section 17.7)
+- Included in the JSON report (Section 17.8)
+- Reproducible given the same inputs and configuration
+
+17.10 Non-Functional Requirements
+
+- Deterministic: identical inputs and configuration SHALL produce
+  identical outputs (no stochastic sampling)
+- Efficient: closed-form conjugate update; no MCMC required.
+  Computation time SHALL be O(S * M) where S = number of strata
+  and M = number of metrics
+- Dependency: requires scipy.stats for the Normal CDF. No additional
+  dependencies beyond the existing pipeline environment
+- Extensible: the model framework supports future extensions including:
+  - Beta-Binomial model for count-based metrics (TP, FP, FN directly)
+  - Hierarchical priors sharing information across related strata
+  - Multi-metric joint posteriors (sensitivity + precision jointly)
+  - Time-series drift detection (sequential Bayesian updating)
+
+17.11 Regulatory Alignment
+
+CAP / CLIA:
+- GEN.40490 (Risk assessment): BRAM provides quantitative, documented
+  risk assessment for pipeline changes, directly supporting this checklist
+- MOL.31500 (Change control): posterior risk scores provide evidence
+  for change impact assessment
+- MOL.31600 (Ongoing verification): probabilistic trend monitoring
+  across verification runs
+
+IVDR (EU 2017/746):
+- Annex I, 3 (Risk management): BRAM implements a formal risk management
+  framework with quantified risk per stratum
+- Annex I, 9.1 (Performance characteristics): posterior distributions
+  provide uncertainty-quantified performance estimates
+- Annex IX, 3.2 (Change management): BRAM risk scores document the
+  impact of software and pipeline component changes
+
+17.12 Example Use Case
+
+Scenario: GATK upgraded from 4.4.0 to 4.5.0. Verification run shows:
+
+  Stratum: gene_panel/ACMG59, metric: sensitivity
+  Baseline sensitivity: 0.9990 (N=200 variants)
+  Verification sensitivity: 0.9790 (N=200 variants)
+  Delta observed: -0.0200
+
+  Prior: Normal(0, 0.005^2) from 8 historical verification runs
+  SE of sensitivity: sqrt(0.979 * 0.021 / 200) = 0.0101
+  Likelihood: Normal(delta_true, 0.0101^2)
+
+  Posterior update:
+    sigma_post^2 = 1 / (1/0.005^2 + 1/0.0101^2)
+                 = 1 / (40000 + 9803.9) = 1 / 49803.9 = 2.008e-5
+    sigma_post = 0.00448
+    mu_post = 2.008e-5 * (0/0.005^2 + (-0.02)/0.0101^2)
+            = 2.008e-5 * (0 + (-196.06)) = -0.00394
+
+  Risk quantity (threshold = 0.01):
+    P(delta_true < -0.01) = Phi((-0.01 - (-0.00394)) / 0.00448)
+                          = Phi(-1.353)
+                          = 0.088
+
+  Risk weight (Tier 1): 2.0
+  Weighted risk: min(1.0, 0.088 * 2.0) = 0.175
+
+  Alert threshold: 0.80
+  Flagged: No (0.175 < 0.80)
+  BRAM verdict: BRAM_PASS
+
+  Interpretation: despite a 2% drop in sensitivity for ACMG59 variants,
+  the posterior probability of a clinically meaningful degradation (>1%)
+  is only 8.8%. The informative prior (sigma=0.005 from 8 stable
+  verification runs) dominates the noisy observation (SE=0.0101) and
+  pulls the posterior mean to -0.004. After tier weighting, the risk
+  score is 0.175 — well below the 80% alert threshold. This
+  demonstrates how BRAM regularizes uncertain estimates. The
+  deterministic acceptance engine may still flag this as a threshold
+  violation, but BRAM's probabilistic assessment does not escalate.
+
+====================================================================
+SECTION 18: TRACEABILITY AND AUDITABILITY
+====================================================================
+
+The system SHALL record:
+- Pipeline versions and container hashes
+- Adapter configurations
+- Fixture versions
+- Annotation versions
+- Stratification definitions
+- Acceptance criteria
+- Bayesian risk assessment parameters and results (Section 17)
+
+All analyses SHALL be reproducible.
+
+====================================================================
+SECTION 19: REGULATORY MAPPING
+====================================================================
+
+CAP / CLIA:
+- MOL.31250: Validation of bioinformatics pipelines
+- MOL.31275: Accuracy and precision
+- MOL.31500: Change control
+- MOL.31600: Ongoing verification
+- GEN.20377: Documentation
+- GEN.40490: Risk assessment (including Bayesian risk, Section 17)
+
+IVDR (EU 2017/746):
+- Annex I, 9.1: Performance characteristics
+- Annex XIII: Performance evaluation
+- Annex IX, 3.2: Change management
+- Annex I, 17: Traceability
+- Annex I, 3: Risk management (including Bayesian risk, Section 17)
+
+====================================================================
+END OF DOCUMENT
+====================================================================

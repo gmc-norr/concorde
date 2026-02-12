@@ -1,0 +1,67 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# pixi environment
+.pixi/
+pixi.lock
+
+# Linting / type checking / testing caches
+.ruff_cache/
+.mypy_cache/
+.pytest_cache/
+
+# MkDocs build output
+site/
+
+# Pipeline output
+results/
+data/
+logs/
+benchmarks/
+
+# SQLite databases
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+
+# Apptainer / Singularity images
+*.sif
+*.simg
+
+# VCF and genomics intermediate files
+*.vcf.gz.tbi
+*.vcf.gz.csi
+*.bam
+*.bam.bai
+*.cram
+*.cram.crai
+*.fa.fai
+*.sdf/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Claude Code
+.claude/
+
+# Secrets / credentials
+.env
+.env.*
+credentials.json

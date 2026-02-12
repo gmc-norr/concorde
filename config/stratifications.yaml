@@ -1,0 +1,132 @@
+# ─── Stratification Definitions ───
+# Defines how variants are binned into strata for per-stratum metric computation.
+# Each dimension assigns variants independently; a variant may belong to
+# multiple strata across dimensions.
+
+# Minimum variants per stratum to be considered high-confidence
+min_variants_per_stratum: 20
+
+dimensions:
+  variant_class:
+    enabled: true
+    strata:
+      - SNP
+      - INDEL
+      - COMPLEX
+
+  indel_size:
+    enabled: true
+    bins:
+      - name: "1bp"
+        min: 1
+        max: 1
+      - name: "2-5bp"
+        min: 2
+        max: 5
+      - name: "6-15bp"
+        min: 6
+        max: 15
+      - name: "16-50bp"
+        min: 16
+        max: 50
+      - name: ">50bp"
+        min: 51
+        max: null
+
+  functional_impact:
+    enabled: true
+    strata:
+      - HIGH
+      - MODERATE
+      - LOW
+      - MODIFIER
+
+  gene_panel:
+    enabled: true
+    # Strata derived automatically from configured gene_sets in config.yaml
+
+  zygosity:
+    enabled: true
+    mode: "germline"  # Only applies to germline mode
+    strata:
+      - HET
+      - HOM_ALT
+
+  vaf_bins:
+    enabled: true
+    mode: "somatic"  # Only applies to somatic mode
+    bins:
+      - name: "<0.05"
+        min: 0.0
+        max: 0.05
+      - name: "0.05-0.10"
+        min: 0.05
+        max: 0.10
+      - name: "0.10-0.20"
+        min: 0.10
+        max: 0.20
+      - name: "0.20-0.50"
+        min: 0.20
+        max: 0.50
+      - name: ">0.50"
+        min: 0.50
+        max: 1.0
+
+  # Region-based stratifications (require BED files; disabled when bed_file is empty)
+  low_complexity:
+    enabled: true
+    bed_file: ""  # Path to low-complexity regions BED (e.g., GIAB SimpleRepeat)
+
+  gc_content:
+    enabled: true
+    window_size: 100  # bp window around variant for GC calculation
+    bins:
+      - name: "0-25%"
+        min: 0.0
+        max: 0.25
+      - name: "25-30%"
+        min: 0.25
+        max: 0.30
+      - name: "30-55%"
+        min: 0.30
+        max: 0.55
+      - name: "55-65%"
+        min: 0.55
+        max: 0.65
+      - name: "65-100%"
+        min: 0.65
+        max: 1.00
+
+  segdup:
+    enabled: true
+    bed_file: ""  # Path to segmental duplication BED
+
+  mappability:
+    enabled: true
+    bed_file: ""  # Path to mappability BED/bigWig
+    bins:
+      - name: "low"
+        min: 0.0
+        max: 0.5
+      - name: "medium"
+        min: 0.5
+        max: 0.9
+      - name: "high"
+        min: 0.9
+        max: 1.01
+
+  coverage_depth:
+    enabled: true
+    bins:
+      - name: "<10x"
+        min: 0
+        max: 10
+      - name: "10-30x"
+        min: 10
+        max: 30
+      - name: "30-50x"
+        min: 30
+        max: 50
+      - name: ">50x"
+        min: 50
+        max: null

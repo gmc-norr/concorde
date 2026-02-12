@@ -1,0 +1,119 @@
+# ─── Concorde Pipeline Configuration ───
+# Edit these paths to match your data before running the pipeline.
+
+# Execution mode: "germline" or "somatic"
+mode: "germline"
+
+# Sample identity (stored in the Run table)
+sample: "NA12878"
+caller: "GATK-HC"
+pipeline_version: "v4.5.0"
+parameters: "GATK HaplotypeCaller default settings"
+
+# Comparison tool for VCF benchmarking
+# Germline options: "happy" (hap.py) or "rtg" (rtg vcfeval)
+# Somatic options: "sompy" (som.py), "rtg" (rtg vcfeval --squash-ploidy), "internal"
+comparison_tool: "happy"
+
+# Somatic mode configuration (only used when mode: "somatic")
+# somatic:
+#   tumor_sample: "TUMOR"
+#   normal_sample: "NORMAL"          # omit for tumor-only
+#   calling_mode: "tumor_normal"     # "tumor_only" or "tumor_normal"
+#   min_vaf: 0.0                     # minimum VAF for truth variants
+#   vaf_tolerance: 0.10              # absolute VAF difference tolerance
+#   expected_contamination: null     # optional upper-bound contamination
+
+# Truth matching configuration (optional, overrides defaults)
+# truth_matching:
+#   germline:
+#     tool: "happy"
+#     genotype_match: true
+#     partial_credit: false
+#   somatic:
+#     tool: "sompy"
+#     vaf_tolerance: 0.10
+#     position_window: 0
+#     require_allele_match: true
+#     track_partial_matches: true
+
+# Reference genome (required by bcftools norm and hap.py/rtg)
+reference: "/data/references/GRCh38/GRCh38.fa"
+
+# Truth VCF (e.g., GIAB high-confidence calls)
+truth_vcf: "/data/truth/HG001_GRCh38_1_22_v4.2.1_benchmark.vcf.gz"
+
+# Confident regions BED (optional but recommended; leave empty string to skip)
+confident_regions: "/data/truth/HG001_GRCh38_1_22_v4.2.1_benchmark_noinconsistent.bed"
+
+# Query VCF(s) to benchmark -- each becomes a separate pipeline run
+query_vcfs:
+  - "/data/query/NA12878_gatk_hc.vcf.gz"
+
+# Gene set BED files for intersection (optional, can be empty list)
+gene_sets:
+  - name: "ACMG59"
+    description: "ACMG SF v3.1 actionable genes"
+    version: "v3.1"
+    bed: "/data/gene_sets/ACMG59_GRCh38.bed"
+
+# VEP annotation (optional)
+# Requires Ensembl VEP installed or available via container
+# vep:
+#   enabled: true
+#   vep_version: "110"
+#   cache_version: "110"
+#   genome_build: "GRCh38"            # "GRCh37" or "GRCh38"
+#   transcript_source: "ensembl"      # "ensembl", "refseq", or "merged"
+#   transcript_selection: "canonical"  # "canonical", "mane_select", or "most_severe"
+#   cache_dir: "/data/vep/cache"
+#   plugins: []                       # e.g., ["CADD", "SpliceAI"]
+#   container: "docker://ensemblorg/ensembl-vep:release_110.1"
+
+# Database path (can be relative or absolute)
+database: "data/concorde.db"
+
+# Decomposition modes to run (each produces a separate Run record)
+# Options: "decomposed" (bcftools norm -m-both), "non-decomposed" (left-align only)
+decomposition_modes:
+  - "decomposed"
+  - "non-decomposed"
+
+# Output directory for intermediate and final files (relative to pipeline/)
+output_dir: "results"
+
+# nf-core/raredisease QC integration (optional)
+# Set nfcore_qc_dir to enable QC metrics ingestion from nf-core/raredisease pipeline
+# Leave as empty string to skip QC ingestion
+nfcore_qc_dir: ""  # e.g., "/path/to/nfcore/raredisease/results"
+
+# nf-core/raredisease sample ID mapping (optional)
+# Maps query VCF identifiers to nf-core/raredisease sample IDs
+# If not specified, uses query VCF basename without extension
+nfcore_sample_mapping:
+  # Example:
+  # "NA12878_gatk_hc": "NA12878"
+
+# Region BED files for stratification (optional)
+# Provide paths to enable region-based stratification dimensions
+region_beds:
+  low_complexity: ""         # e.g., "/data/regions/GRCh38_SimpleRepeat.bed.gz"
+  segmental_duplications: "" # e.g., "/data/regions/GRCh38_segdup.bed.gz"
+  mappability: ""            # e.g., "/data/regions/GRCh38_mappability.bed.gz"
+  # GIAB stratification BED directory (auto-discovers BED files by category)
+  giab:
+    enabled: false
+    bed_dir: ""              # e.g., "/data/giab/stratifications/GRCh38"
+    categories: []           # e.g., ["LowComplexity", "SegmentalDuplications", "GCcontent"]
+
+# QC metric trending (compare current run against historical data)
+qc_trending:
+  enabled: false
+  min_historical_runs: 5
+  z_score_threshold: 2.0     # Flag metrics with |z| > threshold
+
+# Statistical Process Control (track metric drift over time)
+spc:
+  enabled: false
+  sigma_multiplier: 3.0      # Control limits: mean +/- N*sigma
+  min_data_points: 10

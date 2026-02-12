@@ -1,0 +1,17 @@
+bram:
+  enabled: true
+  alert_threshold: 0.80              # Flag strata with tail probability > 80%
+  aggregation_method: "max"          # max | weighted_mean | product
+
+  default_prior:
+    concentration: 20                # Effective prior sample size (kappa)
+
+  degradation_thresholds:            # Per-tier clinically meaningful degradation
+    tier_1: 0.005                    # 0.5% for critical (regulated panels, HIGH impact)
+    tier_2: 0.01                     # 1% for standard (MODERATE/LOW coding)
+    tier_3: 0.02                     # 2% for informational (MODIFIER, off-panel)
+
+  use_historical_priors: true        # Use empirical priors when available
+  min_historical_runs: 5             # Minimum for empirical prior
+
+  per_stratum_overrides: {}          # Can override prior_concentration and/or degradation_threshold

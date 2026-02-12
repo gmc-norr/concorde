@@ -1,0 +1,340 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Concorde Validation Report</title>
+  <style>
+    body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; margin: 2em; color: #333; }
+    h1, h2, h3 { margin-top: 1.5em; }
+    table { border-collapse: collapse; width: 100%; margin: 1em 0; }
+    th, td { border: 1px solid #ddd; padding: 8px 12px; text-align: left; }
+    th { background: #f5f5f5; font-weight: 600; }
+    tr:nth-child(even) { background: #fafafa; }
+    .banner { padding: 1em; border-radius: 4px; margin: 1em 0; font-weight: 600; font-size: 1.2em; }
+    .green { background: #d4edda; color: #155724; }
+    .red { background: #f8d7da; color: #721c24; }
+    .amber { background: #fff3cd; color: #856404; }
+    .gray { background: #e9ecef; color: #495057; }
+    .badge { display: inline-block; padding: 2px 8px; border-radius: 3px; font-size: 0.85em; font-weight: 600; }
+    .low-conf { opacity: 0.7; font-style: italic; }
+    .section { margin: 2em 0; }
+    .meta-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 1em; }
+    .meta-item { background: #f8f9fa; padding: 0.5em 1em; border-radius: 4px; }
+    .meta-label { font-weight: 600; color: #666; }
+    footer { margin-top: 3em; padding-top: 1em; border-top: 1px solid #ddd; color: #888; font-size: 0.9em; }
+  </style>
+</head>
+<body>
+
+<!-- Section 1: Header -->
+<h1>Concorde Validation Report</h1>
+<div class="banner {{ report.acceptance.overall_result | status_color }}">
+  Overall Result: {{ report.acceptance.overall_result }}
+</div>
+
+<div class="meta-grid">
+  <div class="meta-item">
+    <span class="meta-label">Report Type:</span>
+    {{ report.report_type | replace("_", " ") | title }}
+  </div>
+  <div class="meta-item">
+    <span class="meta-label">Mode:</span>
+    {{ report.mode | title }}
+  </div>
+  <div class="meta-item">
+    <span class="meta-label">Generated:</span>
+    {{ report.generated_at }}
+  </div>
+  <div class="meta-item">
+    <span class="meta-label">Report Version:</span>
+    {{ report.report_version }}
+  </div>
+  {% if report.run_metadata.sample %}
+  <div class="meta-item">
+    <span class="meta-label">Sample:</span>
+    {{ report.run_metadata.sample }}
+  </div>
+  {% endif %}
+  {% if report.run_metadata.pipeline_version %}
+  <div class="meta-item">
+    <span class="meta-label">Pipeline Version:</span>
+    {{ report.run_metadata.pipeline_version }}
+  </div>
+  {% endif %}
+  {% if report.run_metadata.caller %}
+  <div class="meta-item">
+    <span class="meta-label">Caller:</span>
+    {{ report.run_metadata.caller }}
+  </div>
+  {% endif %}
+  {% if report.run_metadata.comparison_tool %}
+  <div class="meta-item">
+    <span class="meta-label">Comparison Tool:</span>
+    {{ report.run_metadata.comparison_tool }}
+  </div>
+  {% endif %}
+</div>
+
+<!-- Section 2: Executive Summary -->
+<div class="section">
+  <h2>Executive Summary</h2>
+
+  {% if report.metrics.global %}
+  <table>
+    <thead>
+      <tr>
+        <th>Metric</th>
+        <th>Value</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if report.metrics.global.sensitivity is not none %}
+      <tr><td>Sensitivity (Recall)</td><td>{{ report.metrics.global.sensitivity | format_pct }}</td></tr>
+      {% endif %}
+      {% if report.metrics.global.precision is not none %}
+      <tr><td>Precision</td><td>{{ report.metrics.global.precision | format_pct }}</td></tr>
+      {% endif %}
+      {% if report.metrics.global.f1 is not none %}
+      <tr><td>F1 Score</td><td>{{ report.metrics.global.f1 | format_float }}</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% endif %}
+
+  {% if report.acceptance.violations %}
+  <h3>Violations</h3>
+  <ul>
+    {% for v in report.acceptance.violations %}
+    <li><strong>{{ v.dimension }}/{{ v.stratum }}</strong> ({{ v.tier }}): {{ v.violations | join(", ") }}</li>
+    {% endfor %}
+  </ul>
+  {% endif %}
+</div>
+
+<!-- Section 3: Per-Stratum Metrics -->
+<div class="section">
+  <h2>Per-Stratum Metrics</h2>
+
+  {% if report.metrics.per_stratum %}
+  <table>
+    <thead>
+      <tr>
+        <th>Dimension</th>
+        <th>Stratum</th>
+        <th>Variants</th>
+        <th>TP</th>
+        <th>FP</th>
+        <th>FN</th>
+        <th>Sensitivity</th>
+        <th>Precision</th>
+        <th>F1</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for m in report.metrics.per_stratum %}
+      <tr class="{{ 'low-conf' if m.low_confidence else '' }}">
+        <td>{{ m.dimension }}</td>
+        <td>{{ m.stratum }}</td>
+        <td>{{ m.total_variants }}</td>
+        <td>{{ m.tp_count }}</td>
+        <td>{{ m.fp_count }}</td>
+        <td>{{ m.fn_count }}</td>
+        <td>{{ m.recall | format_pct }}</td>
+        <td>{{ m.precision | format_pct }}</td>
+        <td>{{ m.f1 | format_float }}</td>
+        <td>
+          {% if m.low_confidence %}
+          <span class="badge amber">Low Count</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% else %}
+  <p>No stratified metrics available.</p>
+  {% endif %}
+</div>
+
+<!-- Section 4: Acceptance Results -->
+{% if report.acceptance.per_stratum_results %}
+<div class="section">
+  <h2>Acceptance Results</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Dimension</th>
+        <th>Stratum</th>
+        <th>Tier</th>
+        <th>Result</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for sr in report.acceptance.per_stratum_results %}
+      <tr>
+        <td>{{ sr.dimension }}</td>
+        <td>{{ sr.stratum }}</td>
+        <td>{{ sr.tier }}</td>
+        <td><span class="badge {{ sr.result | status_color }}">{{ sr.result }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+{% if report.bayesian_risk %}
+<!-- Section 4b: Bayesian Risk Assessment -->
+<div class="section">
+  <h2>Bayesian Risk Assessment</h2>
+  <div class="banner {{ 'green' if report.bayesian_risk.verdict == 'BRAM_PASS' else 'red' if report.bayesian_risk.verdict == 'BRAM_FLAG' else 'gray' }}">
+    BRAM Verdict: {{ report.bayesian_risk.verdict }}
+    &mdash; Aggregate Risk: {{ report.bayesian_risk.aggregate_risk_score | format_float(3) }}
+    &mdash; Flagged: {{ report.bayesian_risk.flagged_count }}
+  </div>
+
+  <div class="meta-grid">
+    <div class="meta-item">
+      <span class="meta-label">Alert Threshold:</span>
+      {{ report.bayesian_risk.alert_threshold | format_float(2) }}
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Degradation Threshold:</span>
+      {{ report.bayesian_risk.degradation_threshold | format_float(3) }}
+    </div>
+    <div class="meta-item">
+      <span class="meta-label">Mean Risk:</span>
+      {{ report.bayesian_risk.mean_risk_score | format_float(3) }}
+    </div>
+  </div>
+
+  {% if report.bayesian_risk.per_stratum %}
+  <h3>Per-Stratum Risk</h3>
+  <table>
+    <thead>
+      <tr>
+        <th>Dimension</th>
+        <th>Stratum</th>
+        <th>Metric</th>
+        <th>Delta</th>
+        <th>Posterior Mean</th>
+        <th>Posterior Std</th>
+        <th>Tail P</th>
+        <th>Threshold</th>
+        <th>Risk</th>
+        <th>Status</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for s in report.bayesian_risk.per_stratum %}
+      <tr class="{{ 'red' if s.flagged else '' }}">
+        <td>{{ s.dimension }}</td>
+        <td>{{ s.stratum }}</td>
+        <td>{{ s.metric }}</td>
+        <td>{{ s.delta_observed | format_float(4) }}</td>
+        <td>{{ s.posterior_mu | format_float(4) }}</td>
+        <td>{{ s.posterior_sigma | format_float(4) }}</td>
+        <td>{{ s.tail_probability | format_float(3) }}</td>
+        <td>{{ s.degradation_threshold | format_float(3) if s.degradation_threshold is defined else s.risk_weight | format_float(1) }}</td>
+        <td>{{ s.weighted_risk | format_float(3) }}</td>
+        <td>
+          {% if s.flagged %}
+          <span class="badge red">FLAGGED</span>
+          {% else %}
+          <span class="badge green">OK</span>
+          {% endif %}
+        </td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Section 5: Variant Diff (verification reports only) -->
+{% if report.variant_diff %}
+<div class="section">
+  <h2>Variant Differences</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Variant</th>
+        <th>Baseline</th>
+        <th>Verification</th>
+        <th>Transition</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for v in report.variant_diff[:100] %}
+      <tr>
+        <td>{{ v.chrom }}:{{ v.pos }}:{{ v.ref }}&gt;{{ v.alt }}</td>
+        <td>{{ v.baseline_classification or "N/A" }}</td>
+        <td>{{ v.verification_classification or "N/A" }}</td>
+        <td>{{ v.transition }}</td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% if report.variant_diff | length > 100 %}
+  <p><em>Showing first 100 of {{ report.variant_diff | length }} transitions.</em></p>
+  {% endif %}
+</div>
+{% endif %}
+
+<!-- Section 6: Root Cause Analysis (if applicable) -->
+{% if report.root_cause_evidence %}
+<div class="section">
+  <h2>Root Cause Analysis</h2>
+  <table>
+    <thead>
+      <tr>
+        <th>Category</th>
+        <th>Baseline Value</th>
+        <th>Verification Value</th>
+        <th>Description</th>
+        <th>Score</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for e in report.root_cause_evidence %}
+      <tr>
+        <td>{{ e.category }}</td>
+        <td>{{ e.baseline_value or "N/A" }}</td>
+        <td>{{ e.verification_value or "N/A" }}</td>
+        <td>{{ e.change_description }}</td>
+        <td><span class="badge {{ 'green' if e.score == 'STRONG' else 'amber' if e.score in ('MODERATE', 'WEAK') else 'gray' }}">{{ e.score }}</span></td>
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</div>
+{% endif %}
+
+<!-- Section 7: Traceability -->
+<div class="section">
+  <h2>Traceability</h2>
+
+  {% if report.input_checksums %}
+  <h3>Input File Checksums</h3>
+  <table>
+    <thead>
+      <tr><th>File</th><th>Checksum</th></tr>
+    </thead>
+    <tbody>
+      {% for path, checksum in report.input_checksums.items() %}
+      <tr><td>{{ path }}</td><td><code>{{ checksum }}</code></td></tr>
+      {% endfor %}
+    </tbody>
+  </table>
+  {% endif %}
+</div>
+
+<footer>
+  <p>Generated by Concorde NGS Validation Pipeline &mdash; Report version {{ report.report_version }}</p>
+</footer>
+
+</body>
+</html>

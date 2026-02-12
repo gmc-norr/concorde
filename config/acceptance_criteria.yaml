@@ -1,0 +1,42 @@
+# Acceptance Criteria Configuration (Spec S15)
+# Mode-specific, stratification-aware, risk-based thresholds
+
+acceptance_criteria:
+  mode: "germline"
+
+  # Global minimum thresholds (applied to "ALL" stratum)
+  global:
+    min_sensitivity: 0.99
+    min_precision: 0.999
+
+  # Per-stratum overrides
+  per_stratum:
+    SNP:
+      min_sensitivity: 0.995
+      min_precision: 0.999
+    INDEL:
+      min_sensitivity: 0.98
+      min_precision: 0.995
+
+  # Per-panel overrides (gene panels from gene_sets config)
+  per_panel:
+    ACMG59:
+      min_sensitivity: 0.999
+      min_precision: 0.9999
+
+  # Risk tier assignments (S15.2)
+  tiers:
+    tier_1:
+      label: "Critical"
+      panels: ["ACMG59"]
+      impacts: ["HIGH"]
+    tier_2:
+      label: "Standard"
+      impacts: ["MODERATE", "LOW"]
+    tier_3:
+      label: "Informational"
+      impacts: ["MODIFIER"]
+
+  # Low count handling (S15.1)
+  low_count_threshold: 20
+  low_count_policy: "warn"  # warn | exclude | fail
